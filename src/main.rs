@@ -1,16 +1,15 @@
-#![feature(iter_array_chunks)]
-
-use node::Node;
+use tree::set::SrbTreeSet;
 
 mod key;
-mod node;
+mod tree;
 
 fn main() {
-    let mut node: Node<u64, (), 32> = Node::new_internal();
-    node.insert(0, 1, ());
-    node.insert(0, 32, ());
-    node.insert(0, 2, ());
-    node.insert(0, 7, ());
-    node.insert(0, 1128369, ());
+    let mut node = SrbTreeSet::new();
+    node.insert(1);
+    node.insert(32);
+    node.insert(2);
+    node.insert(7);
+    // node.remove(&6);
+    node.insert(1128369);
     dbg!(node);
 }
