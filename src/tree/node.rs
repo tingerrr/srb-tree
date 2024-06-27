@@ -3,7 +3,13 @@ use std::fmt::Debug;
 
 use crate::key::Key;
 
-pub(super) enum Node<K, V = (), const B: usize = 32> {
+mod iter;
+
+pub use iter::Keys;
+pub use iter::Pairs;
+pub use iter::Values;
+
+pub(super) enum Node<K, V, const B: usize> {
     Internal {
         children: Box<[Option<Self>; B]>,
     },
@@ -50,108 +56,32 @@ impl<K, V, const B: usize> Node<K, V, B> {
             }
         }
     }
+}
 
-    pub fn children(&self) -> Option<impl DoubleEndedIterator<Item = &Node<K, V, B>>> {
-        match self {
-            Node::Internal { children } => Some(children.iter().filter_map(Option::as_ref)),
-            Node::Leaf { keys: _, values: _ } => None,
+impl<K, V, const B: usize> Node<K, V, B> {
+    pub fn keys(&self) -> Keys<'_, K, V, B> {
+        Keys {
+            inner: iter::Iter::new(self),
         }
     }
 
-    pub fn children_mut(&mut self) -> Option<impl DoubleEndedIterator<Item = &mut Node<K, V, B>>> {
-        match self {
-            Node::Internal { children } => Some(children.iter_mut().filter_map(Option::as_mut)),
-            Node::Leaf { keys: _, values: _ } => None,
+    pub fn values(&self) -> Values<'_, K, V, B> {
+        Values {
+            inner: iter::Iter::new(self),
         }
     }
 
-    pub fn keys(&self) -> impl DoubleEndedIterator<Item = &K> {
-        match self {
-            Node::Internal { children } => Box::new(
-                children
-                    .iter()
-                    .filter_map(Option::as_ref)
-                    .flat_map(Node::keys),
-            ) as Box<dyn DoubleEndedIterator<Item = &K>>,
-            Node::Leaf { keys, .. } => Box::new(keys.iter().flat_map(Option::as_ref)),
+    pub fn pairs(&self) -> Pairs<'_, K, V, B> {
+        Pairs {
+            inner: iter::Iter::new(self),
         }
     }
-
-    pub fn keys_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut K> {
-        match self {
-            Node::Internal { children } => Box::new(
-                children
-                    .iter_mut()
-                    .filter_map(Option::as_mut)
-                    .flat_map(Node::keys_mut),
-            )
-                as Box<dyn DoubleEndedIterator<Item = &mut K>>,
-            Node::Leaf { keys, .. } => Box::new(keys.iter_mut().flat_map(Option::as_mut)),
-        }
-    }
-
-    pub fn values(&self) -> impl DoubleEndedIterator<Item = &V> {
-        match self {
-            Node::Internal { children } => Box::new(
-                children
-                    .iter()
-                    .filter_map(Option::as_ref)
-                    .flat_map(Node::values),
-            ) as Box<dyn DoubleEndedIterator<Item = &V>>,
-            Node::Leaf { values, .. } => Box::new(values.iter().flat_map(Option::as_ref)),
-        }
-    }
-
-    pub fn values_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut V> {
-        match self {
-            Node::Internal { children } => Box::new(
-                children
-                    .iter_mut()
-                    .filter_map(Option::as_mut)
-                    .flat_map(Node::values_mut),
-            )
-                as Box<dyn DoubleEndedIterator<Item = &mut V>>,
-            Node::Leaf { values, .. } => Box::new(values.iter_mut().flat_map(Option::as_mut)),
-        }
-    }
-
-    pub fn pairs(&self) -> impl DoubleEndedIterator<Item = (&K, &V)> {
-        match self {
-            Node::Internal { children } => Box::new(
-                children
-                    .iter()
-                    .filter_map(Option::as_ref)
-                    .flat_map(Node::pairs),
-            )
-                as Box<dyn DoubleEndedIterator<Item = (&K, &V)>>,
-            Node::Leaf { keys, values } => Box::new(Iterator::zip(
-                keys.iter().flat_map(Option::as_ref),
-                values.iter().flat_map(Option::as_ref),
-            )),
-        }
-    }
-
-    // pub fn pairs_mut(&mut self) -> impl DoubleEndedIterator<Item = (&mut K, &mut V)> {
-    //     match self {
-    //         Node::Internal { children } => Box::new(
-    //             children
-    //                 .iter_mut()
-    //                 .filter_map(Option::as_mut)
-    //                 .flat_map(Node::pairs_mut),
-    //         )
-    //             as Box<dyn DoubleEndedIterator<Item = (&mut K, &mut V)>>,
-    //         Node::Leaf { keys, values } => Box::new(Iterator::zip(
-    //             keys.iter_mut().flat_map(Option::as_mut),
-    //             values.iter_mut().flat_map(Option::as_mut),
-    //         )),
-    //     }
-    // }
 
     pub fn traverse<F>(&self, mut f: F)
     where
         F: FnMut(&K, &V),
     {
-        // self.pairs().for_each(|(k, v)| f(k, v))
+        self.pairs().for_each(|(k, v)| f(k, v))
     }
 }
 
@@ -198,12 +128,15 @@ impl<K: Key, V, const B: usize> Node<K, V, B> {
     pub fn remove(&mut self, depth: usize, key: &K) -> Option<(K, V)> {
         self.assert_depth(depth);
 
+        let idx = key.index_at(B, depth);
         match self {
             Node::Internal { children } => {
-                //
-                todo!()
+                match children.get_mut(idx).map(Option::as_mut).flatten() {
+                    Some(child) => child.remove(depth + 1, key),
+                    None => None,
+                }
             }
-            Node::Leaf { .. } => self.replace_key_value_at(key.index_at(B, depth), None),
+            Node::Leaf { .. } => self.replace_key_value_at(idx, None),
         }
     }
 
@@ -247,23 +180,5 @@ impl<K: Debug, V: Debug, const B: usize> Debug for Node<K, V, B> {
             map.entry(k, v);
         });
         map.finish()
-    }
-}
-
-enum NodeIter<'n, K, V, const B: usize> {
-    Internal(std::slice::Iter<'n, Node<K, V, B>>),
-    Leaf(std::slice::Iter<'n, (K, V)>),
-}
-
-struct Keys<'n, K, V, const B: usize> {
-    path: Vec<NodeIter<'n, K, V, B>>,
-    current: Option<std::slice::Iter<'n, (K, V)>>,
-}
-
-impl<'n, K, V, const B: usize> Iterator for Keys<'n, K, V, B> {
-    type Item = &'n K;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.current.as_mut()?
     }
 }
