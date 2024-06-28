@@ -1,4 +1,4 @@
-use super::Node;
+use super::{Node, Repr};
 
 #[derive(Debug)]
 struct InternalIter<'n, K, V, const B: usize> {
@@ -9,7 +9,9 @@ impl<'n, K, V, const B: usize> InternalIter<'n, K, V, B> {
     fn yield_left(&mut self) -> Option<&'n Node<K, V, B>> {
         loop {
             if let Some(child) = self.next()? {
-                return Some(child);
+                if child.len != 0 {
+                    return Some(child);
+                }
             }
         }
     }
@@ -17,7 +19,9 @@ impl<'n, K, V, const B: usize> InternalIter<'n, K, V, B> {
     fn yield_right(&mut self) -> Option<&'n Node<K, V, B>> {
         loop {
             if let Some(child) = self.next_back()? {
-                return Some(child);
+                if child.len != 0 {
+                    return Some(child);
+                }
             }
         }
     }
@@ -113,8 +117,8 @@ pub(super) struct Iter<'n, K, V, const B: usize> {
 
 impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
     pub fn new(node: &'n Node<K, V, B>) -> Self {
-        match node {
-            Node::Internal { children } => Self {
+        match &node.repr {
+            Repr::Internal { children } => Self {
                 path: vec![InternalIter {
                     children: &**children,
                 }],
@@ -123,7 +127,7 @@ impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
                     values: &[],
                 },
             },
-            Node::Leaf { keys, values } => Self {
+            Repr::Leaf { keys, values } => Self {
                 path: vec![InternalIter { children: &[] }],
                 leaf: LeafIter {
                     keys: &**keys,
@@ -134,8 +138,8 @@ impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
     }
 
     fn descend_left(&mut self, child: &'n Node<K, V, B>) {
-        match child {
-            Node::Internal { children } => {
+        match &child.repr {
+            Repr::Internal { children } => {
                 let mut current = InternalIter {
                     children: &**children,
                 };
@@ -148,7 +152,7 @@ impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
                     None => {}
                 }
             }
-            Node::Leaf { keys, values } => {
+            Repr::Leaf { keys, values } => {
                 self.leaf = LeafIter {
                     keys: &**keys,
                     values: &**values,

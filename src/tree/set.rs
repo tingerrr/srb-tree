@@ -15,6 +15,11 @@ impl<T> SrbTreeSet<T> {
             root: Node::new_internal(),
         }
     }
+
+    pub fn storage(&self) -> f32 {
+        let (total, used) = self.root.storage_util();
+        used as f32 / total as f32
+    }
 }
 
 impl<T: Key> SrbTreeSet<T> {
@@ -29,14 +34,38 @@ impl<T: Key> SrbTreeSet<T> {
     pub fn get<Q: Borrow<T>>(&self, value: &Q) -> Option<&T> {
         self.root.get(0, value.borrow()).map(|(v, _)| v)
     }
+
+    pub fn first(&self) -> Option<&T> {
+        self.root.first().map(|(v, _)| v)
+    }
+
+    pub fn last(&self) -> Option<&T> {
+        self.root.last().map(|(v, _)| v)
+    }
 }
 
-impl<V: Debug> Debug for SrbTreeSet<V> {
+impl<T: Debug> Debug for SrbTreeSet<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut set = f.debug_set();
-        self.root.traverse(|k, _| {
-            set.entry(k);
+        self.root.pairs().for_each(|(v, _)| {
+            set.entry(v);
         });
         set.finish()
+    }
+}
+
+impl<T: Key> Extend<T> for SrbTreeSet<T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for item in iter {
+            self.insert(item);
+        }
+    }
+}
+
+impl<T: Key> FromIterator<T> for SrbTreeSet<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut this = Self::new();
+        this.extend(iter);
+        this
     }
 }

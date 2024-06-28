@@ -4,13 +4,6 @@ mod key;
 mod tree;
 
 fn main() {
-    let mut node = SrbTreeSet::new();
-    node.insert(1);
-    node.insert(32);
-    node.insert(2);
-    node.insert(7);
-    node.remove(&6);
-    node.remove(&7);
-    node.insert(1128369);
-    dbg!(node);
+    let set: SrbTreeSet<_> = (0..100_000).step_by(10).collect();
+    eprintln!("storage util: {:.2}%", set.storage() * 100.0);
 }
