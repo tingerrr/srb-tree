@@ -112,6 +112,18 @@ impl<K, V, const B: usize> Node<K, V, B> {
         }
     }
 
+    pub fn storage_bytes(&self) -> usize {
+        std::mem::size_of_val(&self)
+            + match &self.repr {
+                Repr::Internal { children } => children
+                    .iter()
+                    .filter_map(Option::as_ref)
+                    .map(Node::storage_bytes)
+                    .sum::<usize>(),
+                Repr::Leaf { .. } => 0,
+            }
+    }
+
     pub fn storage_util(&self) -> (usize, usize) {
         match &self.repr {
             Repr::Internal { children } => children

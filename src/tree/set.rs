@@ -16,6 +16,10 @@ impl<T> SrbTreeSet<T> {
         }
     }
 
+    pub fn storage_bytes(&self) -> usize {
+        self.root.storage_bytes()
+    }
+
     pub fn storage(&self) -> f32 {
         let (total, used) = self.root.storage_util();
         used as f32 / total as f32
