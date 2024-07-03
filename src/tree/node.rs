@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use crate::key::Key;
 
-mod iter;
+pub mod iter;
 
 pub use iter::Keys;
 pub use iter::Pairs;

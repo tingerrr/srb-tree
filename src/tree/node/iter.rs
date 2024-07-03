@@ -111,30 +111,111 @@ impl<'n, K, V, const B: usize> ExactSizeIterator for LeafIter<'n, K, V, B> {}
 
 #[derive(Debug)]
 pub(super) struct Iter<'n, K, V, const B: usize> {
-    path: Vec<InternalIter<'n, K, V, B>>,
-    leaf: LeafIter<'n, K, V, B>,
+    common: InternalIter<'n, K, V, B>,
+    left: Vec<InternalIter<'n, K, V, B>>,
+    right: Vec<InternalIter<'n, K, V, B>>,
+    left_leaf: LeafIter<'n, K, V, B>,
+    right_leaf: LeafIter<'n, K, V, B>,
 }
 
 impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
     pub fn new(node: &'n Node<K, V, B>) -> Self {
         match &node.repr {
             Repr::Internal { children } => Self {
-                path: vec![InternalIter {
+                common: InternalIter {
                     children: &**children,
-                }],
-                leaf: LeafIter {
+                },
+                left: vec![],
+                right: vec![],
+                left_leaf: LeafIter {
+                    keys: &[],
+                    values: &[],
+                },
+                right_leaf: LeafIter {
                     keys: &[],
                     values: &[],
                 },
             },
             Repr::Leaf { keys, values } => Self {
-                path: vec![InternalIter { children: &[] }],
-                leaf: LeafIter {
+                common: InternalIter { children: &[] },
+                left: vec![],
+                right: vec![],
+                left_leaf: LeafIter {
                     keys: &**keys,
                     values: &**values,
                 },
+                right_leaf: LeafIter {
+                    keys: &[],
+                    values: &[],
+                },
             },
         }
+    }
+
+    fn next_leaf_left(&mut self) -> Option<()> {
+        // backtrack the path
+        while let Some(mut last) = self.left.pop() {
+            if let Some(child) = last.yield_left() {
+                self.left.push(last);
+                self.descend_left(child);
+                return Some(());
+            }
+        }
+
+        // check if we still have any in the common root
+        if let Some(child) = self.common.yield_left() {
+            self.descend_left(child);
+            return Some(());
+        }
+
+        // if we're done we zip up the common path further down
+        while !self.right.is_empty() {
+            self.common = self.right.remove(1);
+            if let Some(child) = self.common.yield_left() {
+                self.descend_left(child);
+                return Some(());
+            }
+        }
+
+        // use other child in case it still has any
+        if !self.right_leaf.keys.is_empty() {
+            std::mem::swap(&mut self.left_leaf, &mut self.right_leaf);
+        }
+
+        None
+    }
+
+    fn next_leaf_right(&mut self) -> Option<()> {
+        // backtrack the path
+        while let Some(mut last) = self.right.pop() {
+            if let Some(child) = last.yield_right() {
+                self.right.push(last);
+                self.descend_right(child);
+                return Some(());
+            }
+        }
+
+        // check if we still have any in the common root
+        if let Some(child) = self.common.yield_right() {
+            self.descend_right(child);
+            return Some(());
+        }
+
+        // if we're done we zip up the common path further down
+        while !self.left.is_empty() {
+            self.common = self.left.remove(1);
+            if let Some(child) = self.common.yield_right() {
+                self.descend_right(child);
+                return Some(());
+            }
+        }
+
+        // use other child in case it still has any
+        if !self.left_leaf.keys.is_empty() {
+            std::mem::swap(&mut self.left_leaf, &mut self.right_leaf);
+        }
+
+        None
     }
 
     fn descend_left(&mut self, child: &'n Node<K, V, B>) {
@@ -145,7 +226,7 @@ impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
                 };
 
                 let child = current.yield_left();
-                self.path.push(current);
+                self.left.push(current);
                 match child {
                     Some(child) => self.descend_left(child),
                     // these stumps appear after removals without cleanup
@@ -153,7 +234,7 @@ impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
                 }
             }
             Repr::Leaf { keys, values } => {
-                self.leaf = LeafIter {
+                self.left_leaf = LeafIter {
                     keys: &**keys,
                     values: &**values,
                 };
@@ -161,19 +242,28 @@ impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
         }
     }
 
-    fn next_leaf_left(&mut self) -> Option<()> {
-        loop {
-            let mut last = self.path.pop()?;
-            if let Some(child) = last.yield_left() {
-                self.path.push(last);
-                self.descend_left(child);
-                break Some(());
+    fn descend_right(&mut self, child: &'n Node<K, V, B>) {
+        match &child.repr {
+            Repr::Internal { children } => {
+                let mut current = InternalIter {
+                    children: &**children,
+                };
+
+                let child = current.yield_right();
+                self.right.push(current);
+                match child {
+                    Some(child) => self.descend_right(child),
+                    // these stumps appear after removals without cleanup
+                    None => {}
+                }
+            }
+            Repr::Leaf { keys, values } => {
+                self.right_leaf = LeafIter {
+                    keys: &**keys,
+                    values: &**values,
+                };
             }
         }
-    }
-
-    fn next_leaf_right(&mut self) -> Option<()> {
-        todo!()
     }
 }
 
@@ -182,7 +272,7 @@ impl<'n, K, V, const B: usize> Iterator for Iter<'n, K, V, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(kv) = self.leaf.yield_left() {
+            if let Some(kv) = self.left_leaf.yield_left() {
                 return Some(kv);
             }
 
@@ -194,7 +284,7 @@ impl<'n, K, V, const B: usize> Iterator for Iter<'n, K, V, B> {
 impl<'n, K, V, const B: usize> DoubleEndedIterator for Iter<'n, K, V, B> {
     fn next_back(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(kv) = self.leaf.yield_right() {
+            if let Some(kv) = self.right_leaf.yield_right() {
                 return Some(kv);
             }
 

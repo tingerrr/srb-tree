@@ -2,7 +2,7 @@ use std::{borrow::Borrow, fmt::Debug};
 
 use crate::key::Key;
 
-use super::node::Node;
+use super::node::{self, Node};
 use super::B;
 
 pub struct SrbTreeSet<V> {
@@ -45,6 +45,10 @@ impl<T: Key> SrbTreeSet<T> {
 
     pub fn last(&self) -> Option<&T> {
         self.root.last().map(|(v, _)| v)
+    }
+
+    pub fn iter(&self) -> node::iter::Keys<'_, T, (), B> {
+        self.root.keys()
     }
 }
 
