@@ -43,6 +43,24 @@ pub(super) enum Repr<K, V, const B: usize> {
     },
 }
 
+impl<K: Debug, V: Debug, const B: usize> Debug for Repr<K, V, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Repr::Internal { children } => f
+                .debug_list()
+                .entries(children.iter().flat_map(Option::as_ref))
+                .finish(),
+            Repr::Leaf { keys, values } => f
+                .debug_map()
+                .entries(Iterator::zip(
+                    keys.iter().flat_map(Option::as_ref),
+                    values.iter().flat_map(Option::as_ref),
+                ))
+                .finish(),
+        }
+    }
+}
+
 pub(super) struct Node<K, V, const B: usize> {
     pub(super) repr: Repr<K, V, B>,
     pub(super) len: usize,
@@ -314,10 +332,7 @@ impl<K: Key, V, const B: usize> Node<K, V, B> {
 
 impl<K: Debug, V: Debug, const B: usize> Debug for Node<K, V, B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut map = f.debug_map();
-        self.pairs().for_each(|(k, v)| {
-            map.entry(k, v);
-        });
-        map.finish()
+        write!(f, "{} ", self.len)?;
+        self.repr.fmt(f)
     }
 }
