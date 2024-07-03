@@ -170,7 +170,7 @@ impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
 
         // if we're done we zip up the common path further down
         while !self.right.is_empty() {
-            self.common = self.right.remove(1);
+            self.common = self.right.remove(0);
             if let Some(child) = self.common.yield_left() {
                 self.descend_left(child);
                 return Some(());
@@ -180,6 +180,7 @@ impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
         // use other child in case it still has any
         if !self.right_leaf.keys.is_empty() {
             std::mem::swap(&mut self.left_leaf, &mut self.right_leaf);
+            return Some(());
         }
 
         None
@@ -203,7 +204,7 @@ impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
 
         // if we're done we zip up the common path further down
         while !self.left.is_empty() {
-            self.common = self.left.remove(1);
+            self.common = self.left.remove(0);
             if let Some(child) = self.common.yield_right() {
                 self.descend_right(child);
                 return Some(());
@@ -213,6 +214,7 @@ impl<'n, K, V, const B: usize> Iter<'n, K, V, B> {
         // use other child in case it still has any
         if !self.left_leaf.keys.is_empty() {
             std::mem::swap(&mut self.left_leaf, &mut self.right_leaf);
+            return Some(());
         }
 
         None
@@ -347,5 +349,39 @@ impl<'n, K, V, const B: usize> Iterator for Pairs<'n, K, V, B> {
 impl<'n, K, V, const B: usize> DoubleEndedIterator for Pairs<'n, K, V, B> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn iter() -> Keys<'static, u16, (), 16> {
+        let node = Box::leak(Box::new(Node::new_internal()));
+
+        for val in (0..100).step_by(10) {
+            node.insert(0, val, ());
+        }
+
+        node.keys()
+    }
+
+    #[test]
+    fn test_interspersed() {
+        let mut iter = iter();
+
+        assert_eq!(iter.next(), Some(&0));
+        assert_eq!(iter.next_back(), Some(&90));
+        assert_eq!(iter.next(), Some(&10));
+        assert_eq!(iter.next_back(), Some(&80));
+        assert_eq!(iter.next(), Some(&20));
+
+        assert_eq!(iter.next_back(), Some(&70));
+        assert_eq!(iter.next(), Some(&30));
+        assert_eq!(iter.next_back(), Some(&60));
+        assert_eq!(iter.next(), Some(&40));
+        assert_eq!(iter.next_back(), Some(&50));
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next_back(), None);
     }
 }
